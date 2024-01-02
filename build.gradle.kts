@@ -63,7 +63,7 @@ dependencies {
 }
 
 paperweight {
-    serverProject.set(project(":sapphire-server"))
+    serverProject.set(project(":dice-server"))
 
     remapRepo.set(paperMavenPublicUrl)
     decompileRepo.set(paperMavenPublicUrl)
@@ -75,17 +75,17 @@ paperweight {
         withStandardPatcher {
             apiSourceDirPath.set("pufferfish-api")
             apiPatchDir.set(layout.projectDirectory.dir("patches/api"))
-            apiOutputDir.set(layout.projectDirectory.dir("Sapphire-API"))
+            apiOutputDir.set(layout.projectDirectory.dir("dice-api"))
 
             serverSourceDirPath.set("pufferfish-server")
             serverPatchDir.set(layout.projectDirectory.dir("patches/server"))
-            serverOutputDir.set(layout.projectDirectory.dir("Sapphire-Server"))
+            serverOutputDir.set(layout.projectDirectory.dir("dice-server"))
         }
     }
 }
 
 tasks.generateDevelopmentBundle {
-    apiCoordinates.set("io.sapphiremc.sapphire:sapphire-api")
+    apiCoordinates.set("org.ospaindustries.dice")
     mojangApiCoordinates.set("io.papermc.paper:paper-mojangapi")
     libraryRepositories.set(
         listOf(
