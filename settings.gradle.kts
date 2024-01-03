@@ -31,7 +31,7 @@ if (!file(".git").exists()) {
     error(errorText)
 }
 
-rootProject.name = "sapphire"
+rootProject.name = "dice"
 
 for (name in listOf("dice-api", "dice-server")) {
     val projName = name.lowercase(Locale.ENGLISH)

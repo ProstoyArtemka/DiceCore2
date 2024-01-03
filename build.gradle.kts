@@ -85,7 +85,7 @@ paperweight {
 }
 
 tasks.generateDevelopmentBundle {
-    apiCoordinates.set("org.ospaindustries.dice")
+    apiCoordinates.set("org.ospaindustries")
     mojangApiCoordinates.set("io.papermc.paper:paper-mojangapi")
     libraryRepositories.set(
         listOf(
@@ -123,9 +123,9 @@ publishing {
 }
 
 tasks.register<Copy>("renamedReobfPaperclipJar") {
-    group = "sapphire"
+    group = "dice"
     dependsOn(tasks.createReobfPaperclipJar)
-    from("build/libs/sapphire-paperclip-${project.version}-reobf.jar")
+    from("build/libs/dice-paperclip-${project.version}-reobf.jar")
     into("build/libs")
 
     rename {
