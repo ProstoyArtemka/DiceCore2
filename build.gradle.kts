@@ -85,7 +85,7 @@ paperweight {
 }
 
 tasks.generateDevelopmentBundle {
-    apiCoordinates.set("org.ospaindustries")
+    apiCoordinates.set("org.ospaindustries.dicecore:dice-api")
     mojangApiCoordinates.set("io.papermc.paper:paper-mojangapi")
     libraryRepositories.set(
         listOf(
@@ -103,7 +103,7 @@ allprojects {
             val env: Map<String, String> = System.getenv()
             if (env.containsKey("MAVEN_URL")) {
                 maven(env["MAVEN_URL"]!!) {
-                    name = "SapphireMC"
+                    name = "DiceAPI"
                     credentials {
                         username = env["MAVEN_USERNAME"]
                         password = env["MAVEN_PASSWORD"]
