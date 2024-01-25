@@ -1,0 +1,116 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ProstoyArtemka <ProstoyArtemka@yandex.ru>
+Date: Thu, 25 Jan 2024 21:06:11 +0700
+Subject: [PATCH] Yes yes yes
+
+
+diff --git a/src/main/java/org/bukkit/Location.java b/src/main/java/org/bukkit/Location.java
+index d5bad5d9724c79a98851bc2733bce90f3fd00e5e..cfdf6a8db885798f62f19c067b5e1f64c636f1b3 100644
+--- a/src/main/java/org/bukkit/Location.java
++++ b/src/main/java/org/bukkit/Location.java
+@@ -1199,6 +1199,6 @@ public class Location implements Cloneable, ConfigurationSerializable, io.paperm
+     // Paper end
+ 
+     public static String locationToString(Location location) {
+-        return location.getX() + "_" + location.getY() + "_" + location.getZ() + "_" + location.getWorld().getName();
++        return location.getBlockX() + "[" + location.getBlockY() + "[" + location.getBlockZ() + "[" + location.getWorld().getName();
+     }
+ }
+diff --git a/src/main/java/org/ospaindustries/block/CustomBlock.java b/src/main/java/org/ospaindustries/block/CustomBlock.java
+index 8a954bbe8beefbabfdc8fef3a6a7ef34b86a75ff..afeadb53d788accc28a1653e5f029da655383935 100644
+--- a/src/main/java/org/ospaindustries/block/CustomBlock.java
++++ b/src/main/java/org/ospaindustries/block/CustomBlock.java
+@@ -154,8 +154,7 @@ public class CustomBlock {
+         result.mainDisplay = location.getWorld().spawn(location.toCenterLocation(), ItemDisplay.class);
+         Transformation transformation = result.mainDisplay.getTransformation();
+ 
+-        transformation.getScale().set(1.05, 1.05, 1.05);
+-        transformation.getTranslation().set(-0.025, -0.025, -0.025);
++        transformation.getScale().set(1, 1, 1);
+ 
+         for (DisplayBuilder displayBuilder : displayBuilders) {
+             Display display = displayBuilder.get(location.toCenterLocation());
+@@ -169,7 +168,7 @@ public class CustomBlock {
+ 
+         result.mainDisplay.getPersistentDataContainer().set(BLOCK_DURABILITY_KEY, PersistentDataType.INTEGER, maxDurability);
+         result.mainDisplay.getPersistentDataContainer().set(BLOCK_POSITION_KEY, PersistentDataType.STRING, Location.locationToString(result.block.getLocation()));
+-        result.mainDisplay.getPersistentDataContainer().set(BLOCK_KEY, PersistentDataType.STRING, tag);;
++        result.mainDisplay.getPersistentDataContainer().set(BLOCK_KEY, PersistentDataType.STRING, tag);
+ 
+         return result;
+     }
+@@ -178,9 +177,11 @@ public class CustomBlock {
+         return block.getLocation().toCenterLocation().getNearbyEntitiesByType(Display.class, 0.25f).stream().filter(d -> d.getPersistentDataContainer().has(BLOCK_SUB_DISPLAY)).toList();
+     }
+ 
+-    public void breakBlock(boolean dropLoot, @Nullable Player player) {
+-        BlockBreakEvent event = new BlockBreakEvent(block, player);
+-        getBehavior().blockBreak(event);
++    public void breakBlock(boolean dropLoot, @Nullable Player player, boolean triggerEvent) {
++        if (triggerEvent) {
++            BlockBreakEvent event = new BlockBreakEvent(block, player);
++            getBehavior().blockBreak(event);
++        }
+ 
+         if (dropLoot)
+             for (ItemStack stack : loot.getLoot())
+diff --git a/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java b/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
+index 502b7c14d27857ccd1c4e14718b25f1ff6144b6c..a190e3864c91677fdd07034942c6d622472d932e 100644
+--- a/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
++++ b/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
+@@ -2,6 +2,7 @@ package org.ospaindustries.block;
+ 
+ import org.bukkit.Material;
+ import org.bukkit.entity.Display;
++import org.bukkit.inventory.ItemStack;
+ import org.ospaindustries.item.CustomItem;
+ import org.ospaindustries.item.CustomItemBuilder;
+ import org.ospaindustries.utils.CustomLoot;
+@@ -17,11 +18,11 @@ public class CustomBlockBuilder {
+ 
+     private final String tag;
+     private CustomBlockBehavior behavior = new CustomBlockBehavior() {};
+-    private int customModelData;
+-    private int maxDurability;
+-    private CustomLoot customLoot;
+-    private InstrumentMaterial material;
+-    private InstrumentType type;
++    private int customModelData = 0;
++    private int maxDurability = 10;
++    private CustomLoot customLoot = List::of;
++    private InstrumentMaterial material = InstrumentMaterial.AIR;
++    private InstrumentType type = InstrumentType.HAND;
+ 
+     private final ArrayList<String> itemLore = new ArrayList<>();
+     private int itemModelData = -1;
+diff --git a/src/main/java/org/ospaindustries/utils/BreakBlockRunnable.java b/src/main/java/org/ospaindustries/utils/BreakBlockRunnable.java
+index f890815278883b99c52e501d17c8decf70c11d89..040a1ce926a931fa5ce701fd8d0ef9b7040ab77d 100644
+--- a/src/main/java/org/ospaindustries/utils/BreakBlockRunnable.java
++++ b/src/main/java/org/ospaindustries/utils/BreakBlockRunnable.java
+@@ -13,7 +13,7 @@ import java.util.HashMap;
+ 
+ public class BreakBlockRunnable extends BukkitRunnable {
+ 
+-    public static HashMap<Location, BreakBlockRunnable> breakBlockRunnables = new HashMap<>();
++    public static HashMap<String, BreakBlockRunnable> breakBlockRunnables = new HashMap<>();
+ 
+     private final CustomBlock block;
+     private final Player player;
+@@ -24,7 +24,7 @@ public class BreakBlockRunnable extends BukkitRunnable {
+ 
+         if (block.getBlock() == null) return;
+ 
+-        breakBlockRunnables.put(block.getBlock().getLocation(), this);
++        breakBlockRunnables.put(Location.locationToString(block.getBlock().getLocation().toBlockLocation()), this);
+     }
+ 
+     private InstrumentMaterial getMaterial(ItemStack itemStack) {
+@@ -81,7 +81,7 @@ public class BreakBlockRunnable extends BukkitRunnable {
+ 
+         boolean dropLoot = getMaterial(stack).ordinal() < block.getInstrumentMaterial().ordinal() || getType(stack) != block.getInstrumentType();
+ 
+-        block.breakBlock(dropLoot, player);
++        block.breakBlock(dropLoot, player, true);
+ 
+         if (stack.getItemMeta() instanceof Damageable) {
+             org.bukkit.entity.Damageable damageable = (org.bukkit.entity.Damageable) stack.getItemMeta();
