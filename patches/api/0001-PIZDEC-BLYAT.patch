@@ -1,0 +1,2015 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ProstoyArtemka <ProstoyArtemka@yandex.ru>
+Date: Wed, 6 Mar 2024 23:20:25 +0700
+Subject: [PATCH] PIZDEC BLYAT
+
+
+diff --git a/src/main/java/org/bukkit/Location.java b/src/main/java/org/bukkit/Location.java
+index c6049747fc286acb4e8053901fcc517e5170afa2..302d56e829d017a5e07413671d2d1657e810ebc8 100644
+--- a/src/main/java/org/bukkit/Location.java
++++ b/src/main/java/org/bukkit/Location.java
+@@ -50,6 +50,10 @@ public class Location implements Cloneable, ConfigurationSerializable, io.paperm
+         this(world, x, y, z, 0, 0);
+     }
+ 
++    public static String locationToString(Location location) {
++        return location.getBlockX() + "[" + location.getBlockY() + "[" + location.getBlockZ() + "[" + location.getWorld().getName();
++    }
++
+     /**
+      * Constructs a new Location with the given coordinates and direction
+      *
+diff --git a/src/main/java/org/bukkit/block/Block.java b/src/main/java/org/bukkit/block/Block.java
+index 38cf77e32b76bc7d9db7523f7f21427ebb72f913..9e0626e70e8da509764a93bdbadee56ecd0a8b17 100644
+--- a/src/main/java/org/bukkit/block/Block.java
++++ b/src/main/java/org/bukkit/block/Block.java
+@@ -20,6 +20,7 @@ import org.bukkit.util.VoxelShape;
+ import org.jetbrains.annotations.Contract;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
++import org.ospaindustries.block.CustomBlock;
+ 
+ /**
+  * Represents a block. This is a live object, and only one Block may exist for
+@@ -796,4 +797,12 @@ public interface Block extends Metadatable, Translatable, net.kyori.adventure.tr
+         return this.getBlockData().getDestroySpeed(itemStack, considerEnchants);
+     }
+     // Paper end - destroy speed API
++    
++    default boolean isCustom() {
++       return CustomBlock.fromBlock(this) != null;
++   }
++
++    default CustomBlock toCustom() {
++       return CustomBlock.fromBlock(this);
++   }
+ }
+diff --git a/src/main/java/org/bukkit/entity/Entity.java b/src/main/java/org/bukkit/entity/Entity.java
+index d9929d9311e4b2b0ae13a8f6f13563257263f298..787c3185610c3f65b334a04f761a10be2966382d 100644
+--- a/src/main/java/org/bukkit/entity/Entity.java
++++ b/src/main/java/org/bukkit/entity/Entity.java
+@@ -24,6 +24,7 @@ import org.jetbrains.annotations.ApiStatus;
+ import org.jetbrains.annotations.Contract;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
++import org.ospaindustries.entity.CustomEntity;
+ 
+ /**
+  * Represents a base entity in the world
+@@ -1104,4 +1105,12 @@ public interface Entity extends Metadatable, CommandSender, Nameable, Persistent
+      */
+     @NotNull String getScoreboardEntryName();
+     // Paper end - entity scoreboard name
++    
++    default boolean isCustom() {
++       return CustomEntity.fromEntity(this) != null;
++    }
++
++    default CustomEntity toCustom() {
++       return CustomEntity.fromEntity(this);
++    }
+ }
+diff --git a/src/main/java/org/bukkit/entity/Player.java b/src/main/java/org/bukkit/entity/Player.java
+index 254a02ddb5dc867c9dd6c2086791f7ab94247fd3..3f5ae881c21113a8fe7bb0a5e401340ec3713e77 100644
+--- a/src/main/java/org/bukkit/entity/Player.java
++++ b/src/main/java/org/bukkit/entity/Player.java
+@@ -3687,4 +3687,8 @@ public interface Player extends HumanEntity, Conversable, OfflinePlayer, PluginM
+     @Override
+     Spigot spigot();
+     // Spigot end
++
++    void disableShield(boolean sprinting);
++    float getDamageAfterArmorAbsorb(LivingEntity attacker, float amount);
++    float getDamageAfterMagicAbsorb(LivingEntity attacker, float amount);
+ }
+diff --git a/src/main/java/org/bukkit/inventory/ItemStack.java b/src/main/java/org/bukkit/inventory/ItemStack.java
+index 245a730a54c4b241a9a67eccceefafd2763bd238..538019aae94837706721c24be47475b229b4c5f9 100644
+--- a/src/main/java/org/bukkit/inventory/ItemStack.java
++++ b/src/main/java/org/bukkit/inventory/ItemStack.java
+@@ -2,9 +2,11 @@ package org.bukkit.inventory;
+ 
+ import com.google.common.base.Preconditions;
+ import com.google.common.collect.ImmutableMap;
++
+ import java.util.LinkedHashMap;
+ import java.util.List; // Paper
+ import java.util.Map;
++
+ import org.bukkit.Bukkit;
+ import org.bukkit.Material;
+ import org.bukkit.Translatable;
+@@ -15,8 +17,11 @@ import org.bukkit.enchantments.Enchantment;
+ import org.bukkit.inventory.meta.Damageable;
+ import org.bukkit.inventory.meta.ItemMeta;
+ import org.bukkit.material.MaterialData;
++import org.bukkit.persistence.PersistentDataType;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
++import org.ospaindustries.block.CustomBlock;
++import org.ospaindustries.item.CustomItem;
+ 
+ /**
+  * Represents a stack of items.
+@@ -32,7 +37,8 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     private ItemMeta meta;
+ 
+     @Utility
+-    protected ItemStack() {}
++    protected ItemStack() {
++    }
+ 
+     /**
+      * Defaults stack size to 1, with no extra data.
+@@ -54,7 +60,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      * <i>items</i>. Do not use this class to encapsulate Materials for which
+      * {@link Material#isItem()} returns false.</b>
+      *
+-     * @param type item material
++     * @param type   item material
+      * @param amount stack size
+      */
+     public ItemStack(@NotNull final Material type, final int amount) {
+@@ -64,7 +70,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     /**
+      * An item stack with the specified damage / durability
+      *
+-     * @param type item material
++     * @param type   item material
+      * @param amount stack size
+      * @param damage durability / damage
+      * @deprecated see {@link #setDurability(short)}
+@@ -75,10 +81,10 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     }
+ 
+     /**
+-     * @param type the type
++     * @param type   the type
+      * @param amount the amount in the stack
+      * @param damage the damage value of the item
+-     * @param data the data value or null
++     * @param data   the data value or null
+      * @deprecated this method uses an ambiguous data byte object
+      */
+     @Deprecated
+@@ -99,7 +105,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      *
+      * @param stack the stack to copy
+      * @throws IllegalArgumentException if the specified stack is null or
+-     *     returns an item meta not created by the item factory
++     *                                  returns an item meta not created by the item factory
+      */
+     public ItemStack(@NotNull final ItemStack stack) throws IllegalArgumentException {
+         Preconditions.checkArgument(stack != null, "Cannot copy null stack");
+@@ -371,8 +377,8 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      * @param enchantments Enchantments to add
+      * @throws IllegalArgumentException if the specified enchantments is null
+      * @throws IllegalArgumentException if any specific enchantment or level
+-     *     is null. <b>Warning</b>: Some enchantments may be added before this
+-     *     exception is thrown.
++     *                                  is null. <b>Warning</b>: Some enchantments may be added before this
++     *                                  exception is thrown.
+      */
+     @Utility
+     public void addEnchantments(@NotNull Map<Enchantment, Integer> enchantments) {
+@@ -388,10 +394,10 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      * If this item stack already contained the given enchantment (at any
+      * level), it will be replaced.
+      *
+-     * @param ench Enchantment to add
++     * @param ench  Enchantment to add
+      * @param level Level of the enchantment
+      * @throws IllegalArgumentException if enchantment null, or enchantment is
+-     *     not applicable
++     *                                  not applicable
+      */
+     @Utility
+     public void addEnchantment(@NotNull Enchantment ench, int level) {
+@@ -430,7 +436,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      * This method is unsafe and will ignore level restrictions or item type.
+      * Use at your own discretion.
+      *
+-     * @param ench Enchantment to add
++     * @param ench  Enchantment to add
+      * @param level Level of the enchantment
+      */
+     public void addUnsafeEnchantment(@NotNull Enchantment ench, int level) {
+@@ -559,6 +565,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     }
+ 
+     // Paper start
++
+     /**
+      * Edits the {@link ItemMeta} of this stack.
+      * <p>
+@@ -587,8 +594,8 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      * </p>
+      *
+      * @param metaClass the type of meta to edit
+-     * @param consumer the meta consumer
+-     * @param <M> the meta type
++     * @param consumer  the meta consumer
++     * @param <M>       the meta type
+      * @return {@code true} if the edit was successful, {@code false} otherwise
+      */
+     public <M extends ItemMeta> boolean editMeta(final @NotNull Class<M> metaClass, final @NotNull java.util.function.Consumer<@NotNull ? super M> consumer) {
+@@ -626,9 +633,9 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      *
+      * @param itemMeta new ItemMeta, or null to indicate meta data be cleared.
+      * @return True if successfully applied ItemMeta, see {@link
+-     *     ItemFactory#isApplicable(ItemMeta, ItemStack)}
++     * ItemFactory#isApplicable(ItemMeta, ItemStack)}
+      * @throws IllegalArgumentException if the item meta was not created by
+-     *     the {@link ItemFactory}
++     *                                  the {@link ItemFactory}
+      */
+     public boolean setItemMeta(@Nullable ItemMeta itemMeta) {
+         return setItemMeta0(itemMeta, type);
+@@ -667,6 +674,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     }
+ 
+     // Paper start
++
+     /**
+      * Randomly enchants a copy of this {@link ItemStack} using the given experience levels.
+      *
+@@ -674,9 +682,9 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      *
+      * <p>Levels must be in range {@code [1, 30]}.</p>
+      *
+-     * @param levels levels to use for enchanting
++     * @param levels        levels to use for enchanting
+      * @param allowTreasure whether to allow enchantments where {@link org.bukkit.enchantments.Enchantment#isTreasure()} returns true
+-     * @param random {@link java.util.Random} instance to use for enchanting
++     * @param random        {@link java.util.Random} instance to use for enchanting
+      * @return enchanted copy of the provided ItemStack
+      * @throws IllegalArgumentException on bad arguments
+      */
+@@ -702,7 +710,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * Minecraft updates are converting simple item stacks into more complex NBT oriented Item Stacks.
+-     *
++     * <p>
+      * Use this method to ensure any desired data conversions are processed.
+      * The input itemstack will not be the same as the returned itemstack.
+      *
+@@ -716,9 +724,10 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     /**
+      * Deserializes this itemstack from raw NBT bytes. NBT is safer for data migrations as it will
+      * use the built in data converter instead of bukkits dangerous serialization system.
+-     *
++     * <p>
+      * This expects that the DataVersion was stored on the root of the Compound, as saved from
+      * the {@link #serializeAsBytes()} API returned.
++     *
+      * @param bytes bytes representing an item in NBT
+      * @return ItemStack migrated to this version of Minecraft if needed.
+      */
+@@ -730,6 +739,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     /**
+      * Serializes this itemstack to raw bytes in NBT. NBT is safer for data migrations as it will
+      * use the built in data converter instead of bukkits dangerous serialization system.
++     *
+      * @return bytes representing this item in NBT.
+      */
+     @NotNull
+@@ -762,6 +772,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * Clones the itemstack and returns it a single quantity.
++     *
+      * @return The new itemstack with 1 quantity
+      */
+     @NotNull
+@@ -771,6 +782,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * Clones the itemstack and returns it as the specified quantity
++     *
+      * @param qty The quantity of the cloned item
+      * @return The new itemstack with specified quantity
+      */
+@@ -783,6 +795,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * Adds 1 to this itemstack. Will not go over the items max stack size.
++     *
+      * @return The same item (not a clone)
+      */
+     @NotNull
+@@ -804,6 +817,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * Subtracts 1 to this itemstack.  Going to 0 or less will invalidate the item.
++     *
+      * @return The same item (not a clone)
+      */
+     @NotNull
+@@ -825,6 +839,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * If the item has lore, returns it, else it will return null
++     *
+      * @return The lore, or null
+      * @deprecated in favor of {@link #lore()}
+      */
+@@ -842,6 +857,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * If the item has lore, returns it, else it will return null
++     *
+      * @return The lore, or null
+      */
+     public @Nullable List<net.kyori.adventure.text.Component> lore() {
+@@ -988,7 +1004,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      * runs all logic associated with damaging an itemstack like
+      * events and stat changes.
+      *
+-     * @param amount the amount of damage to do
++     * @param amount       the amount of damage to do
+      * @param livingEntity the entity related to the damage
+      * @return the damaged itemstack or an empty one if it broke. May return the same instance of ItemStack
+      * @see org.bukkit.entity.LivingEntity#damageItemStack(EquipmentSlot, int) to damage itemstacks in equipment slots
+@@ -999,7 +1015,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+ 
+     /**
+      * Returns an empty item stack, consists of an air material and a stack size of 0.
+-     *
++     * <p>
+      * Any item stack with a material of air or a stack size of 0 is seen
+      * as being empty by {@link ItemStack#isEmpty}.
+      */
+@@ -1017,6 +1033,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+     }
+     // Paper end
+     // Paper start - expose itemstack tooltip lines
++
+     /**
+      * Computes the tooltip lines for this stack.
+      * <p>
+@@ -1025,7 +1042,7 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+      * Minecraft versions.
+      *
+      * @param tooltipContext the tooltip context
+-     * @param player a player for player-specific tooltip lines
++     * @param player         a player for player-specific tooltip lines
+      * @return an immutable list of components (can be empty)
+      */
+     @SuppressWarnings("deprecation") // abusing unsafe as a bridge
+@@ -1033,4 +1050,24 @@ public class ItemStack implements Cloneable, ConfigurationSerializable, Translat
+         return Bukkit.getUnsafe().computeTooltipLines(this, tooltipContext, player);
+     }
+     // Paper end - expose itemstack tooltip lines
++
++    @Nullable
++    public CustomItem toCustomItem() {
++        if (!isCustom()) return null;
++        String tag = getItemMeta().getPersistentDataContainer().get(CustomItem.DICE_CORE_CUSTOM_ITEM_KEY, PersistentDataType.STRING);
++
++        CustomItem customItem = CustomItem.getRegisteredItems().get(tag).clone();
++        customItem.setItemMeta(getItemMeta());
++
++        return customItem;
++    }
++
++    public boolean isCustom() {
++        if (getItemMeta() == null) return false;
++        String tag = getItemMeta().getPersistentDataContainer().get(CustomItem.DICE_CORE_CUSTOM_ITEM_KEY, PersistentDataType.STRING);
++
++        if (tag == null) return false;
++
++        return CustomItem.getRegisteredItems().containsKey(tag);
++    }
+ }
+diff --git a/src/main/java/org/ospaindustries/block/CustomBlock.java b/src/main/java/org/ospaindustries/block/CustomBlock.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f183125c2fd932bbd4cb18519e7cbb2826077666
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/block/CustomBlock.java
+@@ -0,0 +1,241 @@
++package org.ospaindustries.block;
++
++import org.bukkit.Location;
++import org.bukkit.Material;
++import org.bukkit.NamespacedKey;
++import org.bukkit.Particle;
++import org.bukkit.block.Block;
++import org.bukkit.entity.Display;
++import org.bukkit.entity.ItemDisplay;
++import org.bukkit.entity.Player;
++import org.bukkit.event.block.BlockBreakEvent;
++import org.bukkit.inventory.ItemStack;
++import org.bukkit.inventory.meta.ItemMeta;
++import org.bukkit.persistence.PersistentDataContainer;
++import org.bukkit.persistence.PersistentDataType;
++import org.bukkit.util.Transformation;
++import org.jetbrains.annotations.Nullable;
++import org.ospaindustries.item.CustomItem;
++import org.ospaindustries.utils.CustomLoot;
++import org.ospaindustries.utils.DisplayBuilder;
++import org.ospaindustries.utils.InstrumentMaterial;
++import org.ospaindustries.utils.InstrumentType;
++
++import java.util.HashMap;
++import java.util.List;
++import java.util.Optional;
++
++public class CustomBlock {
++    public static NamespacedKey BLOCK_KEY = new NamespacedKey("dice_core", "block_key");
++    public static NamespacedKey BLOCK_DURABILITY_KEY = new NamespacedKey("dice_core", "block_durability");
++    public static NamespacedKey BLOCK_POSITION_KEY = new NamespacedKey("dice_core", "block_position_key");
++    public static NamespacedKey BLOCK_SUB_DISPLAY = new NamespacedKey("dice_core", "block_sub_display");
++
++    private static final HashMap<String, CustomBlock> registeredBlocks = new HashMap<>();
++
++    private final String tag;
++    private final int customModelData;
++    private final CustomLoot loot;
++    private final int maxDurability;
++    private final CustomBlockBehavior behavior;
++    private final InstrumentType instrumentType;
++    private final InstrumentMaterial instrumentMaterial;
++    private final CustomItem item;
++    private Block block;
++    private ItemDisplay mainDisplay;
++    private List<DisplayBuilder> displayBuilders;
++    private final boolean drop;
++
++    CustomBlock(String tag, int customModelData, CustomLoot loot, CustomBlockBehavior behavior, InstrumentType type, InstrumentMaterial material, int durability, CustomItem item, List<DisplayBuilder> displayBuilders, boolean drop) {        this.tag = tag;
++        this.customModelData = customModelData;
++        this.loot = loot;
++        this.behavior = behavior;
++        this.maxDurability = durability;
++        this.instrumentType = type;
++        this.instrumentMaterial = material;
++        this.item = item;
++        this.displayBuilders = displayBuilders;
++        this.drop = drop;
++    }
++
++    @Nullable
++    public CustomItem getBlockCustomItem() {
++        return CustomItem.getRegisteredItems().getOrDefault(tag + "_blockitem", null);
++    }
++
++    public void spawnDamageParticle() {
++        Location location = block.getLocation().toCenterLocation();
++
++        location.getWorld().spawnParticle(Particle.ITEM_CRACK, location, 1,
++            0.3, 0.3, 0.3, 0.05, getDisplayItemStack());
++    }
++
++    public void spawnBreakParticle() {
++        Location location = block.getLocation().toCenterLocation();
++
++        location.getWorld().spawnParticle(Particle.ITEM_CRACK, location, 30,
++            0, 0, 0, 0.08, getDisplayItemStack());
++    }
++
++    private ItemStack getDisplayItemStack() {
++        CustomBlock item = this;
++        ItemStack result = new ItemStack(Material.PRISMARINE_SHARD);
++        ItemMeta meta = result.getItemMeta();
++
++        meta.setCustomModelData(item.customModelData);
++        PersistentDataContainer dataContainer = meta.getPersistentDataContainer();
++        dataContainer.set(BLOCK_KEY, PersistentDataType.STRING, item.tag);
++        result.setItemMeta(meta);
++
++        return result;
++    }
++
++    public String getTag() {
++        return tag;
++    }
++
++    public int getCustomModelData() {
++        return customModelData;
++    }
++
++    public CustomBlockBehavior getBehavior() {
++        return behavior;
++    }
++
++    @Nullable
++    public Block getBlock() {
++        return block;
++    }
++
++    public static HashMap<String, CustomBlock> getRegisteredBlocks() {
++        return registeredBlocks;
++    }
++
++    public InstrumentMaterial getInstrumentMaterial() {
++        return instrumentMaterial;
++    }
++
++    public InstrumentType getInstrumentType() {
++        return instrumentType;
++    }
++
++    public CustomLoot getLoot() {
++        return loot;
++    }
++
++    public ItemDisplay getMainDisplay() {
++        return mainDisplay;
++    }
++
++    public int getMaxDurability() {
++        return maxDurability;
++    }
++
++    public int getDurability() {
++        if (mainDisplay == null) return -1;
++
++        return mainDisplay.getPersistentDataContainer().get(BLOCK_DURABILITY_KEY, PersistentDataType.INTEGER);
++    }
++
++    public void setDurability(int durability) {
++        if (mainDisplay == null) return;
++
++        mainDisplay.getPersistentDataContainer().set(BLOCK_DURABILITY_KEY, PersistentDataType.INTEGER, durability);
++    }
++
++    public boolean exist() {
++        return block != null;
++    }
++
++    public List<Display> getSubDisplays() {
++        return block.getLocation().toCenterLocation().getNearbyEntitiesByType(Display.class, 0.25f).stream().filter(d -> d.getPersistentDataContainer().has(BLOCK_SUB_DISPLAY)).toList();
++    }
++    
++    public CustomBlock place(Location location) {
++        CustomBlock result = this.clone();
++
++        result.block = location.getBlock();
++        result.mainDisplay = location.getWorld().spawn(location.toCenterLocation(), ItemDisplay.class);
++        Transformation transformation = result.mainDisplay.getTransformation();
++
++        transformation.getScale().set(1, 1, 1);
++
++        for (DisplayBuilder displayBuilder : displayBuilders) {
++            Display display = displayBuilder.get(location.toCenterLocation());
++
++            display.getPersistentDataContainer().set(BLOCK_SUB_DISPLAY, PersistentDataType.BOOLEAN, true);
++        }
++
++        result.block.setType(Material.BARRIER);
++        result.mainDisplay.setItemStack(getDisplayItemStack());
++        result.mainDisplay.setTransformation(transformation);
++
++        result.mainDisplay.getPersistentDataContainer().set(BLOCK_DURABILITY_KEY, PersistentDataType.INTEGER, maxDurability);
++        result.mainDisplay.getPersistentDataContainer().set(BLOCK_POSITION_KEY, PersistentDataType.STRING, Location.locationToString(result.block.getLocation()));
++        result.mainDisplay.getPersistentDataContainer().set(BLOCK_KEY, PersistentDataType.STRING, tag);
++
++        return result;
++    }
++
++    public void breakBlock(boolean dropLoot, @Nullable Player player) {
++        BlockBreakEvent event = new BlockBreakEvent(block, player);
++        getBehavior().blockBreak(event);
++
++        if (dropLoot)
++            for (ItemStack stack : loot.getLoot())
++                block.getWorld().dropItemNaturally(block.getLocation().toCenterLocation(), stack);
++
++        if (drop)
++            block.getWorld().dropItemNaturally(block.getLocation().toCenterLocation(), CustomItem.getRegisteredItems().get(this.getTag() + "_blockitem"));
++
++        for (Display display : getSubDisplays())
++            display.remove();
++        
++        block.setType(Material.AIR);
++        mainDisplay.remove();
++
++        mainDisplay = null;
++        block = null;
++    }
++
++    public void breakBlock(boolean dropLoot, @Nullable Player player, boolean triggerEvent) {
++        if (triggerEvent) {
++            BlockBreakEvent event = new BlockBreakEvent(block, player);
++            getBehavior().blockBreak(event);
++        }
++    }
++
++    @Nullable
++    public static CustomBlock fromBlock(Block block) {
++        Location location = block.getLocation();
++
++        Optional<ItemDisplay> displayOptional = location.getNearbyEntitiesByType(ItemDisplay.class, 1).stream()
++            .filter(display -> display.getPersistentDataContainer().has(CustomBlock.BLOCK_POSITION_KEY, PersistentDataType.STRING))
++            .filter(display -> display.getPersistentDataContainer().get(CustomBlock.BLOCK_POSITION_KEY, PersistentDataType.STRING).equals(Location.locationToString(location))).findAny();
++
++        if (displayOptional.isEmpty()) return null;
++
++        ItemDisplay display = displayOptional.get();
++        String tag = display.getPersistentDataContainer().get(BLOCK_KEY, PersistentDataType.STRING);
++
++        CustomBlock customBlock = getRegisteredBlocks().get(tag).clone();
++        customBlock.block = block;
++        customBlock.mainDisplay = display;
++
++        return customBlock;
++    }
++
++
++    @Nullable
++    public static CustomBlock fromBlockItem(CustomItem item) {
++        if (!item.isBlockItem()) return null;
++        String tag = item.getItemTag().substring(0, item.getItemTag().length() - "_blockitem".length());
++
++        return CustomBlock.getRegisteredBlocks().getOrDefault(tag, null);
++    }
++
++    @Override
++    public CustomBlock clone() {
++        return new CustomBlock(tag, customModelData, loot, behavior, instrumentType, instrumentMaterial, maxDurability, item, displayBuilders, drop);
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/block/CustomBlockBehavior.java b/src/main/java/org/ospaindustries/block/CustomBlockBehavior.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..97ece015086a7bbaaed06a712778590d057dfe6c
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/block/CustomBlockBehavior.java
+@@ -0,0 +1,17 @@
++package org.ospaindustries.block;
++
++import org.bukkit.event.block.BlockBreakEvent;
++import org.bukkit.event.block.BlockDamageAbortEvent;
++import org.bukkit.event.block.BlockDamageEvent;
++import org.bukkit.event.block.BlockPlaceEvent;
++import org.bukkit.event.player.PlayerInteractEvent;
++
++public interface CustomBlockBehavior {
++
++    default void tick(CustomBlock block) {}
++    default void blockBreak(BlockBreakEvent event) {}
++    default void startBreaking(BlockDamageEvent event) {}
++    default void stopBreaking(BlockDamageAbortEvent event) {}
++    default void interact(PlayerInteractEvent event) {}
++    default void placeBlock(BlockPlaceEvent event) {}
++}
+diff --git a/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java b/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2514dfcfc6165df344d9a9b0bc74f7eb7eaa00bf
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
+@@ -0,0 +1,139 @@
++package org.ospaindustries.block;
++
++import net.kyori.adventure.text.Component;
++import org.bukkit.Material;
++import org.ospaindustries.item.CustomItem;
++import org.ospaindustries.item.CustomItemBuilder;
++import org.ospaindustries.utils.CustomLoot;
++import org.ospaindustries.utils.DisplayBuilder;
++import org.ospaindustries.utils.InstrumentMaterial;
++import org.ospaindustries.utils.InstrumentType;
++
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++
++public class CustomBlockBuilder {
++
++    private final String tag;
++    private CustomBlockBehavior behavior = new CustomBlockBehavior() {};
++    private int customModelData = 0;
++    private int maxDurability = 10;
++    private CustomLoot customLoot = List::of;
++    private InstrumentMaterial material = InstrumentMaterial.AIR;
++    private InstrumentType type = InstrumentType.HAND;
++
++    private ArrayList<String> itemLore = new ArrayList<>();
++    private int itemModelData = -1;
++    private String itemDisplayName = "";
++    private Component itemDisplayComponent;
++    private Material itemMaterial = Material.BARRIER;
++    private final ArrayList<DisplayBuilder> displayBuilders = new ArrayList<>();
++    private boolean dropHimself;
++
++    public CustomBlockBuilder(String tag) {
++        this.tag = tag;
++    }
++
++    public CustomBlockBuilder setBehavior(CustomBlockBehavior behavior) {
++        this.behavior = behavior;
++
++        return this;
++    }
++
++    public CustomBlockBuilder setMaxDurability(int maxDurability) {
++        this.maxDurability = maxDurability;
++
++        return this;
++    }
++
++    public CustomBlockBuilder setInstrument(InstrumentMaterial material, InstrumentType type) {
++        this.material = material;
++        this.type = type;
++
++        return this;
++    }
++
++    public CustomBlockBuilder addDisplay(DisplayBuilder displayBuilder) {
++        displayBuilders.add(displayBuilder);
++
++        return this;
++    }
++    
++    public CustomBlockBuilder setCustomModelData(int customModelData) {
++        this.customModelData = customModelData;
++
++        return this;
++    }
++
++    public CustomBlockBuilder setCustomLoot(CustomLoot customLoot) {
++        this.customLoot = customLoot;
++
++        return this;
++    }
++
++    public CustomBlockBuilder setDropHimself(boolean drop) {
++        this.dropHimself = drop;
++
++        return this;
++    }
++
++    public CustomBlockBuilder setItemDisplayName(String itemDisplayName) {
++        this.itemDisplayName = itemDisplayName;
++
++        return this;
++    }
++
++    public void setItemDisplayComponent(Component itemDisplayComponent) {
++        this.itemDisplayComponent = itemDisplayComponent;
++    }
++
++    public CustomBlockBuilder addItemLore(String lorePart) {
++
++        itemLore.add(lorePart);
++
++        return this;
++    }
++
++    public CustomBlockBuilder addItemLore(String... lorePart) {
++        itemLore.addAll(Arrays.stream(lorePart).toList());
++
++        return this;
++    }
++
++    public CustomBlockBuilder addItemLore(List<String> lorePart) {
++        itemLore.addAll(lorePart);
++
++        return this;
++    }
++
++    public CustomBlockBuilder setItemModelData(int itemModelData) {
++        this.itemModelData = itemModelData;
++
++        return this;
++    }
++
++    public CustomBlockBuilder setItemMaterial(Material itemMaterial) {
++        this.itemMaterial = itemMaterial;
++
++        return this;
++    }
++
++    public void register() {
++        if (itemDisplayComponent == null) itemDisplayComponent = Component.text(itemDisplayName);
++
++        new CustomItemBuilder(tag + "_blockitem", itemMaterial, itemDisplayComponent)
++            .setCustomModelData(itemModelData)
++            .addLore(itemLore)
++            .setBlockItem(true)
++            .register();
++
++        CustomItem customItem = CustomItem.getRegisteredItems().get(tag + "_blockitem");
++
++        if (CustomBlock.getRegisteredBlocks().containsKey(tag))
++            throw new RuntimeException("Can't register block with tag \"" + tag + "\", this block is already registered.");
++
++        CustomBlock block = new CustomBlock(tag, customModelData, customLoot, behavior, type, material, maxDurability, customItem, displayBuilders, dropHimself);
++        CustomBlock.getRegisteredBlocks().put(tag, block);
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/entity/CustomEntity.java b/src/main/java/org/ospaindustries/entity/CustomEntity.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c99b74cdfc7c909cae82cf171a5639e7373b6a71
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/entity/CustomEntity.java
+@@ -0,0 +1,179 @@
++package org.ospaindustries.entity;
++
++import org.bukkit.Location;
++import org.bukkit.NamespacedKey;
++import org.bukkit.entity.Display;
++import org.bukkit.entity.Entity;
++import org.bukkit.entity.Interaction;
++import org.bukkit.inventory.ItemStack;
++import org.bukkit.persistence.PersistentDataType;
++import org.bukkit.util.Transformation;
++import org.bukkit.util.Vector;
++import org.jetbrains.annotations.Nullable;
++import org.joml.Vector2f;
++import org.ospaindustries.utils.CustomLoot;
++import org.ospaindustries.utils.DisplayBuilder;
++
++import java.util.*;
++
++public class CustomEntity {
++
++    public static NamespacedKey ENTITY_KEY = new NamespacedKey("dice_core", "entity_key");
++
++    private static final HashMap<String, CustomEntity> registeredEntities = new HashMap<>();
++    private final String tag;
++    private final Class<? extends Entity> basedOn;
++    private final CustomEntityBehavior behavior;
++    private final boolean show;
++    private final ArrayList<DisplayBuilder> displays;
++    private final Vector2f hitboxSize;
++    private Interaction hitbox;
++    private CustomLoot loot;
++
++    private Entity entity;
++
++    CustomEntity(String tag, Class<? extends Entity> basedOn, Vector2f hitboxSize, CustomEntityBehavior behavior, boolean show, ArrayList<DisplayBuilder> displays, CustomLoot loot) {
++        this.tag = tag;
++        this.basedOn = basedOn;
++        this.behavior = behavior;
++        this.show = show;
++        this.displays = displays;
++        this.hitboxSize = hitboxSize;
++        this.loot = loot;
++    }
++
++    public void spawn(Location location) {
++        entity = location.getWorld().spawn(location, basedOn);
++
++        for (DisplayBuilder builder : displays) {
++            Display display = builder.get(entity.getLocation());
++
++            entity.addPassenger(display);
++        }
++
++        entity.setVisibleByDefault(show);
++        entity.getPersistentDataContainer().set(ENTITY_KEY, PersistentDataType.STRING, tag);
++
++        hitbox = location.getWorld().spawn(location, Interaction.class);
++
++        hitbox.setInteractionHeight(hitboxSize.get(1));
++        hitbox.setInteractionWidth(hitboxSize.get(0));
++
++        entity.addPassenger(hitbox);
++    }
++
++    @Nullable
++    public Display getAnyDisplayByTag(String tag) {
++        if (!isExist()) return null;
++
++        Optional<Display> optional = entity.getPassengers().stream()
++            .filter(e -> e instanceof Display)
++            .map(e -> (Display) e)
++            .filter(e -> e.getPersistentDataContainer().has(DisplayBuilder.DISPLAY_TAG_KEY, PersistentDataType.STRING))
++            .filter(e -> e.getPersistentDataContainer().get(DisplayBuilder.DISPLAY_TAG_KEY, PersistentDataType.STRING).equals(tag))
++            .findAny();
++
++        if (optional.isEmpty()) return null;
++
++        return optional.get();
++    }
++
++    public List<Display> getAllDisplays() {
++        if (!isExist()) return Collections.emptyList();
++
++        return entity.getPassengers().stream()
++            .filter(e -> e instanceof Display)
++            .map(e -> (Display) e)
++            .toList();
++    }
++
++    public List<Display> getAllDisplaysByTag(String tag) {
++        if (!isExist()) return Collections.emptyList();
++
++        return entity.getPassengers().stream()
++            .filter(e -> e instanceof Display)
++            .map(e -> (Display) e)
++            .filter(e -> e.getPersistentDataContainer().has(DisplayBuilder.DISPLAY_TAG_KEY, PersistentDataType.STRING))
++            .filter(e -> e.getPersistentDataContainer().get(DisplayBuilder.DISPLAY_TAG_KEY, PersistentDataType.STRING).equals(tag))
++            .toList();
++    }
++
++    public CustomEntityBehavior getBehavior() {
++        return behavior;
++    }
++
++    @Nullable
++    public static CustomEntity fromEntity(Entity entity) {
++        if (!entity.getPersistentDataContainer().has(ENTITY_KEY)) return null;
++
++        String tag = entity.getPersistentDataContainer().get(ENTITY_KEY, PersistentDataType.STRING);
++
++        CustomEntity customEntity = CustomEntity.getRegisteredEntities().get(tag).clone();
++        customEntity.entity = entity;
++
++        Optional<Interaction> optionalInteraction = entity.getPassengers().stream().filter(e -> e instanceof Interaction).map(e -> (Interaction) e).findAny();
++
++        if (optionalInteraction.isEmpty()) {
++            Interaction hitbox = entity.getLocation().getWorld().spawn(entity.getLocation(), Interaction.class);
++            entity.addPassenger(hitbox);
++
++            customEntity.hitbox = hitbox;
++        } else
++            customEntity.hitbox = optionalInteraction.get();
++
++        if (entity.getPassengers().size() < customEntity.displays.size()) {
++            for (Entity e : entity.getPassengers())
++                if (!(e instanceof Display)) {
++                    entity.removePassenger(e);
++
++                    e.remove();
++                }
++
++            entity.removePassenger(customEntity.hitbox);
++
++            for (DisplayBuilder builder : customEntity.displays)
++                entity.addPassenger(builder.get(entity.getLocation()));
++        }
++
++        return customEntity;
++    }
++
++    public String getTag() {
++        return tag;
++    }
++
++    public Entity getEntity() {
++        return entity;
++    }
++
++    public Interaction getHitbox() {
++        return hitbox;
++    }
++
++    private boolean isExist() {
++        return entity != null && !entity.isEmpty() && !entity.isDead() && !entity.isValid();
++    }
++
++    public static HashMap<String, CustomEntity> getRegisteredEntities() {
++        return registeredEntities;
++    }
++
++    @Override
++    public CustomEntity clone() {
++        return new CustomEntity(tag, basedOn, hitboxSize, behavior, show, displays, loot);
++    }
++
++    public void remove(boolean useLoot) {
++        if (hitbox != null) hitbox.remove();
++
++        if (useLoot)
++            for (ItemStack item : loot.getLoot())
++                entity.getWorld().dropItemNaturally(entity.getLocation(), item);
++
++        if (entity != null) {
++            for (Entity e : entity.getPassengers()) e.remove();
++
++            entity.remove();
++        }
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/entity/CustomEntityBehavior.java b/src/main/java/org/ospaindustries/entity/CustomEntityBehavior.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ed31a1841d2fa7bddd774157c51c53a58d303e9b
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/entity/CustomEntityBehavior.java
+@@ -0,0 +1,16 @@
++package org.ospaindustries.entity;
++
++import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
++import org.bukkit.event.entity.EntityDamageEvent;
++import org.bukkit.event.entity.EntityDeathEvent;
++import org.bukkit.event.player.PlayerInteractAtEntityEvent;
++
++public interface CustomEntityBehavior {
++
++    default void tick(CustomEntity entity) {}
++    default void death(EntityDeathEvent event) {}
++    default void damageHitbox(PrePlayerAttackEntityEvent event) {}
++    default void damageEntity(EntityDamageEvent event) {}
++    default void interactionAtHitBox(PlayerInteractAtEntityEvent event, CustomEntity entity) {}
++    default void interactionAtEntity(PlayerInteractAtEntityEvent event) {}
++}
+diff --git a/src/main/java/org/ospaindustries/entity/CustomEntityBuilder.java b/src/main/java/org/ospaindustries/entity/CustomEntityBuilder.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..67eddf08751672f97e4db5f3741af1cca32f503e
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/entity/CustomEntityBuilder.java
+@@ -0,0 +1,78 @@
++package org.ospaindustries.entity;
++
++import org.bukkit.entity.EntityType;
++import org.bukkit.inventory.ItemStack;
++import org.joml.Vector2f;
++import org.ospaindustries.block.CustomBlock;
++import org.ospaindustries.utils.CustomLoot;
++import org.ospaindustries.utils.DisplayBuilder;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++
++public class CustomEntityBuilder {
++    private String tag;
++    private EntityType baseOn;
++    private final ArrayList<DisplayBuilder> displays = new ArrayList<>();
++    private CustomEntityBehavior behavior;
++    private boolean showBasedEntity = false;
++    private Vector2f hitbox = new Vector2f(1, 1);
++    private CustomLoot loot = Collections::emptyList;
++
++    public CustomEntityBuilder(String tag, EntityType baseOn) {
++        this.tag = tag;
++        this.baseOn = baseOn;
++    }
++
++    public void setTag(String tag) {
++        this.tag = tag;
++    }
++
++    public void setEntity(EntityType baseOn) {
++        this.baseOn = baseOn;
++    }
++
++    public CustomEntityBuilder addDisplay(DisplayBuilder displayBuilder) {
++        displays.add(displayBuilder);
++
++        return this;
++    }
++
++    public CustomEntityBuilder setBehavior(CustomEntityBehavior behavior) {
++        this.behavior = behavior;
++
++        return this;
++    }
++
++    public CustomEntityBuilder setBasedEntityVisibility(boolean value) {
++        showBasedEntity = value;
++
++        return this;
++    }
++
++    public CustomEntityBuilder setHitBoxSize(Vector2f vector) {
++        hitbox = vector;
++
++        return this;
++    }
++
++    public CustomEntityBuilder setHitBoxSize(float width, float height) {
++        hitbox = new Vector2f(width, height);
++
++        return this;
++    }
++
++    public void setLoot(CustomLoot loot) {
++        this.loot = loot;
++    }
++
++    public void register() {
++        CustomEntity entity = new CustomEntity(tag, baseOn.getEntityClass(), hitbox, behavior, showBasedEntity, displays, loot);
++
++        if (CustomEntity.getRegisteredEntities().containsKey(tag))
++            throw new RuntimeException("Can't register entity with tag \"" + tag + "\", this entity is already registered.");
++
++        CustomEntity.getRegisteredEntities().put(tag, entity);
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/events/ArmorEquipEvent.java b/src/main/java/org/ospaindustries/events/ArmorEquipEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa9622fc06d4ded93eaf243ad6c99b7ab481f0a8
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/events/ArmorEquipEvent.java
+@@ -0,0 +1,136 @@
++package org.ospaindustries.events;
++
++import org.bukkit.entity.Player;
++import org.bukkit.event.Cancellable;
++import org.bukkit.event.HandlerList;
++import org.bukkit.event.player.PlayerEvent;
++import org.bukkit.inventory.ItemStack;
++
++public class ArmorEquipEvent extends PlayerEvent implements Cancellable {
++
++    private static final HandlerList handlers = new HandlerList();
++    private boolean cancel = false;
++    private final EquipMethod equipType;
++    private final ArmorType type;
++    private ItemStack oldArmorPiece, newArmorPiece;
++
++    /**
++     * @param player The player who put on / removed the armor.
++     * @param type The ArmorType of the armor added
++     * @param oldArmorPiece The ItemStack of the armor removed.
++     * @param newArmorPiece The ItemStack of the armor added.
++     */
++    public ArmorEquipEvent(final Player player, final EquipMethod equipType, final ArmorType type, final ItemStack oldArmorPiece, final ItemStack newArmorPiece){
++        super(player);
++        this.equipType = equipType;
++        this.type = type;
++        this.oldArmorPiece = oldArmorPiece;
++        this.newArmorPiece = newArmorPiece;
++    }
++
++    /**
++     * Gets a list of handlers handling this event.
++     *
++     * @return A list of handlers handling this event.
++     */
++    public static HandlerList getHandlerList(){
++        return handlers;
++    }
++
++    /**
++     * Gets a list of handlers handling this event.
++     *
++     * @return A list of handlers handling this event.
++     */
++    @Override
++    public final HandlerList getHandlers(){
++        return handlers;
++    }
++
++    /**
++     * Sets if this event should be cancelled.
++     *
++     * @param cancel If this event should be cancelled.
++     */
++    public final void setCancelled(final boolean cancel){
++        this.cancel = cancel;
++    }
++
++    /**
++     * Gets if this event is cancelled.
++     *
++     * @return If this event is cancelled
++     */
++    public final boolean isCancelled(){
++        return cancel;
++    }
++
++    public final ArmorType getType(){
++        return type;
++    }
++
++    /**
++     * Returns the last equipped armor piece, could be a piece of armor, or null
++     */
++    public final ItemStack getOldArmorPiece(){
++        return oldArmorPiece;
++    }
++
++    public final void setOldArmorPiece(final ItemStack oldArmorPiece){
++        this.oldArmorPiece = oldArmorPiece;
++    }
++
++    /**
++     * Returns the newly equipped armor, could be a piece of armor, or null
++     */
++    public final ItemStack getNewArmorPiece(){
++        return newArmorPiece;
++    }
++
++    public final void setNewArmorPiece(final ItemStack newArmorPiece){
++        this.newArmorPiece = newArmorPiece;
++    }
++
++    /**
++     * Gets the method used to either equip or unequip an armor piece.
++     */
++    public EquipMethod getMethod(){
++        return equipType;
++    }
++
++    public enum EquipMethod {// These have got to be the worst documentations ever.
++        /**
++         * When you shift click an armor piece to equip or unequip
++         */
++        SHIFT_CLICK,
++        /**
++         * When you drag and drop the item to equip or unequip
++         */
++        DRAG,
++        /**
++         * When you manually equip or unequip the item. Use to be DRAG
++         */
++        PICK_DROP,
++        /**
++         * When you right click an armor piece in the hotbar without the inventory open to equip.
++         */
++        HOTBAR,
++        /**
++         * When you press the hotbar slot number while hovering over the armor slot to equip or unequip
++         */
++        HOTBAR_SWAP,
++        /**
++         * When in range of a dispenser that shoots an armor piece to equip.<br>
++         * Requires the spigot version to have {@link org.bukkit.event.block.BlockDispenseArmorEvent} implemented.
++         */
++        DISPENSER,
++        /**
++         * When an armor piece is removed due to it losing all durability.
++         */
++        BROKE,
++        /**
++         * When you die causing all armor to unequip
++         */
++        DEATH,
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/events/ArmorListener.java b/src/main/java/org/ospaindustries/events/ArmorListener.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..8594ba08f4a28955a566b1a8aa413682b171a0f0
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/events/ArmorListener.java
+@@ -0,0 +1,194 @@
++package org.ospaindustries.events;
++
++import org.bukkit.Bukkit;
++import org.bukkit.entity.Player;
++import org.bukkit.event.Event;
++import org.bukkit.event.EventHandler;
++import org.bukkit.event.EventPriority;
++import org.bukkit.event.Listener;
++import org.bukkit.event.block.Action;
++import org.bukkit.event.entity.PlayerDeathEvent;
++import org.bukkit.event.inventory.*;
++import org.bukkit.event.player.PlayerInteractEvent;
++import org.bukkit.event.player.PlayerItemBreakEvent;
++import org.bukkit.inventory.ItemStack;
++import java.util.List;
++
++import org.bukkit.Material;
++import org.bukkit.event.Event.Result;
++
++
++import java.util.List;
++
++public class ArmorListener implements Listener {
++    private final List<String> blockedMaterials;
++
++    public ArmorListener(List<String> blockedMaterials){
++        this.blockedMaterials = blockedMaterials;
++    }
++    //Event Priority is highest because other plugins might cancel the events before we check.
++
++    @EventHandler(priority =  EventPriority.HIGHEST, ignoreCancelled = true)
++    public final void inventoryClick(final InventoryClickEvent e){
++        boolean shift = false, numberkey = false;
++        if(e.isCancelled()) return;
++        if(e.getAction() == InventoryAction.NOTHING) return;// Why does this get called if nothing happens??
++        if(e.getClick().equals(ClickType.SHIFT_LEFT) || e.getClick().equals(ClickType.SHIFT_RIGHT)){
++            shift = true;
++        }
++        if(e.getClick().equals(ClickType.NUMBER_KEY)){
++            numberkey = true;
++        }
++        if(e.getSlotType() != InventoryType.SlotType.ARMOR && e.getSlotType() != InventoryType.SlotType.QUICKBAR && e.getSlotType() != InventoryType.SlotType.CONTAINER) return;
++        if(e.getClickedInventory() != null && !e.getClickedInventory().getType().equals(InventoryType.PLAYER)) return;
++        if (!e.getInventory().getType().equals(InventoryType.CRAFTING) && !e.getInventory().getType().equals(InventoryType.PLAYER)) return;
++        if(!(e.getWhoClicked() instanceof Player)) return;
++        ArmorType newArmorType = ArmorType.matchType(shift ? e.getCurrentItem() : e.getCursor());
++        if(!shift && newArmorType != null && e.getRawSlot() != newArmorType.getSlot()){
++            // Used for drag and drop checking to make sure you aren't trying to place a helmet in the boots slot.
++            return;
++        }
++        if(shift){
++            newArmorType = ArmorType.matchType(e.getCurrentItem());
++            if(newArmorType != null){
++                boolean equipping = true;
++                if(e.getRawSlot() == newArmorType.getSlot()){
++                    equipping = false;
++                }
++                if(newArmorType.equals(ArmorType.HELMET) && (equipping ? isAirOrNull(e.getWhoClicked().getInventory().getHelmet()) : !isAirOrNull(e.getWhoClicked().getInventory().getHelmet())) || newArmorType.equals(ArmorType.CHESTPLATE) && (equipping ? isAirOrNull(e.getWhoClicked().getInventory().getChestplate()) : !isAirOrNull(e.getWhoClicked().getInventory().getChestplate())) || newArmorType.equals(ArmorType.LEGGINGS) && (equipping ? isAirOrNull(e.getWhoClicked().getInventory().getLeggings()) : !isAirOrNull(e.getWhoClicked().getInventory().getLeggings())) || newArmorType.equals(ArmorType.BOOTS) && (equipping ? isAirOrNull(e.getWhoClicked().getInventory().getBoots()) : !isAirOrNull(e.getWhoClicked().getInventory().getBoots()))){
++                    ArmorEquipEvent armorEquipEvent = new ArmorEquipEvent((Player) e.getWhoClicked(), ArmorEquipEvent.EquipMethod.SHIFT_CLICK, newArmorType, equipping ? null : e.getCurrentItem(), equipping ? e.getCurrentItem() : null);
++                    Bukkit.getServer().getPluginManager().callEvent(armorEquipEvent);
++                    if(armorEquipEvent.isCancelled()){
++                        e.setCancelled(true);
++                    }
++                }
++            }
++        }else{
++            ItemStack newArmorPiece = e.getCursor();
++            ItemStack oldArmorPiece = e.getCurrentItem();
++            if(numberkey){
++                if(e.getClickedInventory().getType().equals(InventoryType.PLAYER)){// Prevents shit in the 2by2 crafting
++                    // e.getClickedInventory() == The players inventory
++                    // e.getHotBarButton() == key people are pressing to equip or unequip the item to or from.
++                    // e.getRawSlot() == The slot the item is going to.
++                    // e.getSlot() == Armor slot, can't use e.getRawSlot() as that gives a hotbar slot ;-;
++                    ItemStack hotbarItem = e.getClickedInventory().getItem(e.getHotbarButton());
++                    if(!isAirOrNull(hotbarItem)){// Equipping
++                        newArmorType = ArmorType.matchType(hotbarItem);
++                        newArmorPiece = hotbarItem;
++                        oldArmorPiece = e.getClickedInventory().getItem(e.getSlot());
++                    }else{// Unequipping
++                        newArmorType = ArmorType.matchType(!isAirOrNull(e.getCurrentItem()) ? e.getCurrentItem() : e.getCursor());
++                    }
++                }
++            }else{
++                if(isAirOrNull(e.getCursor()) && !isAirOrNull(e.getCurrentItem())){// unequip with no new item going into the slot.
++                    newArmorType = ArmorType.matchType(e.getCurrentItem());
++                }
++                // e.getCurrentItem() == Unequip
++                // e.getCursor() == Equip
++                // newArmorType = ArmorType.matchType(!isAirOrNull(e.getCurrentItem()) ? e.getCurrentItem() : e.getCursor());
++            }
++            if(newArmorType != null && e.getRawSlot() == newArmorType.getSlot()){
++                ArmorEquipEvent.EquipMethod method = ArmorEquipEvent.EquipMethod.PICK_DROP;
++                if(e.getAction().equals(InventoryAction.HOTBAR_SWAP) || numberkey) method = ArmorEquipEvent.EquipMethod.HOTBAR_SWAP;
++                ArmorEquipEvent armorEquipEvent = new ArmorEquipEvent((Player) e.getWhoClicked(), method, newArmorType, oldArmorPiece, newArmorPiece);
++                Bukkit.getServer().getPluginManager().callEvent(armorEquipEvent);
++                if(armorEquipEvent.isCancelled()){
++                    e.setCancelled(true);
++                }
++            }
++        }
++    }
++
++    @EventHandler(priority =  EventPriority.HIGHEST)
++    public void playerInteractEvent(PlayerInteractEvent e){
++        if(e.useItemInHand().equals(Result.DENY))return;
++        //
++        if(e.getAction() == Action.PHYSICAL) return;
++        if(e.getAction() == Action.RIGHT_CLICK_AIR || e.getAction() == Action.RIGHT_CLICK_BLOCK){
++            Player player = e.getPlayer();
++            if(!e.useInteractedBlock().equals(Result.DENY)){
++                if(e.getClickedBlock() != null && e.getAction() == Action.RIGHT_CLICK_BLOCK && !player.isSneaking()){// Having both of these checks is useless, might as well do it though.
++                    // Some blocks have actions when you right-click them which stops the client from equipping the armor in hand.
++                    Material mat = e.getClickedBlock().getType();
++                    for(String s : blockedMaterials){
++                        if(mat.name().equalsIgnoreCase(s)) return;
++                    }
++                }
++            }
++            ArmorType newArmorType = ArmorType.matchType(e.getItem());
++            if(newArmorType != null){
++                if(newArmorType.equals(ArmorType.HELMET) && isAirOrNull(e.getPlayer().getInventory().getHelmet()) || newArmorType.equals(ArmorType.CHESTPLATE) && isAirOrNull(e.getPlayer().getInventory().getChestplate()) || newArmorType.equals(ArmorType.LEGGINGS) && isAirOrNull(e.getPlayer().getInventory().getLeggings()) || newArmorType.equals(ArmorType.BOOTS) && isAirOrNull(e.getPlayer().getInventory().getBoots())){
++                    ArmorEquipEvent armorEquipEvent = new ArmorEquipEvent(e.getPlayer(), ArmorEquipEvent.EquipMethod.HOTBAR, ArmorType.matchType(e.getItem()), null, e.getItem());
++                    Bukkit.getServer().getPluginManager().callEvent(armorEquipEvent);
++                    if(armorEquipEvent.isCancelled()){
++                        e.setCancelled(true);
++                        player.updateInventory();
++                    }
++                }
++            }
++        }
++    }
++
++    @EventHandler(priority =  EventPriority.HIGHEST, ignoreCancelled = true)
++    public void inventoryDrag(InventoryDragEvent event){
++        // getType() seems to always be even.
++        // Old Cursor gives the item you are equipping
++        // Raw slot is the ArmorType slot
++        // Can't replace armor using this method making getCursor() useless.
++        ArmorType type = ArmorType.matchType(event.getOldCursor());
++        if(event.getRawSlots().isEmpty()) return;// Idk if this will ever happen
++        if(type != null && type.getSlot() == event.getRawSlots().stream().findFirst().orElse(0)){
++            ArmorEquipEvent armorEquipEvent = new ArmorEquipEvent((Player) event.getWhoClicked(), ArmorEquipEvent.EquipMethod.DRAG, type, null, event.getOldCursor());
++            Bukkit.getServer().getPluginManager().callEvent(armorEquipEvent);
++            if(armorEquipEvent.isCancelled()){
++                event.setResult(Result.DENY);
++                event.setCancelled(true);
++            }
++        }
++    }
++
++    @EventHandler
++    public void itemBreakEvent(PlayerItemBreakEvent e){
++        ArmorType type = ArmorType.matchType(e.getBrokenItem());
++        if(type != null){
++            Player p = e.getPlayer();
++            ArmorEquipEvent armorEquipEvent = new ArmorEquipEvent(p, ArmorEquipEvent.EquipMethod.BROKE, type, e.getBrokenItem(), null);
++            Bukkit.getServer().getPluginManager().callEvent(armorEquipEvent);
++            if(armorEquipEvent.isCancelled()){
++                ItemStack i = e.getBrokenItem().clone();
++                i.setAmount(1);
++                i.setDurability((short) (i.getDurability() - 1));
++                if(type.equals(ArmorType.HELMET)){
++                    p.getInventory().setHelmet(i);
++                }else if(type.equals(ArmorType.CHESTPLATE)){
++                    p.getInventory().setChestplate(i);
++                }else if(type.equals(ArmorType.LEGGINGS)){
++                    p.getInventory().setLeggings(i);
++                }else if(type.equals(ArmorType.BOOTS)){
++                    p.getInventory().setBoots(i);
++                }
++            }
++        }
++    }
++
++    @EventHandler
++    public void playerDeathEvent(PlayerDeathEvent e){
++        Player p = e.getEntity();
++        if(e.getKeepInventory()) return;
++        for(ItemStack i : p.getInventory().getArmorContents()){
++            if(!isAirOrNull(i)){
++                Bukkit.getServer().getPluginManager().callEvent(new ArmorEquipEvent(p, ArmorEquipEvent.EquipMethod.DEATH, ArmorType.matchType(i), i, null));
++                // No way to cancel a death event.
++            }
++        }
++    }
++
++    /**
++     * A utility method to support versions that use null or air ItemStacks.
++     */
++    public static boolean isAirOrNull(ItemStack item){
++        return item == null || item.getType().equals(Material.AIR);
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/events/ArmorType.java b/src/main/java/org/ospaindustries/events/ArmorType.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb91935df3a795c070c7b67c7d8ee3207784c99d
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/events/ArmorType.java
+@@ -0,0 +1,34 @@
++package org.ospaindustries.events;
++
++import org.bukkit.inventory.ItemStack;
++
++public enum ArmorType {
++
++    HELMET(5), CHESTPLATE(6), LEGGINGS(7), BOOTS(8);
++
++    private final int slot;
++
++    ArmorType(int slot){
++        this.slot = slot;
++    }
++
++    /**
++     * Attempts to match the ArmorType for the specified ItemStack.
++     *
++     * @param itemStack The ItemStack to parse the type of.
++     * @return The parsed ArmorType, or null if not found.
++     */
++    public static ArmorType matchType(final ItemStack itemStack){
++        if (ArmorListener.isAirOrNull(itemStack)) return null;
++        String type = itemStack.getType().name();
++        if(type.endsWith("_HELMET") || type.endsWith("_SKULL") || type.endsWith("_HEAD")) return HELMET;
++        else if(type.endsWith("_CHESTPLATE") || type.equals("ELYTRA")) return CHESTPLATE;
++        else if(type.endsWith("_LEGGINGS")) return LEGGINGS;
++        else if(type.endsWith("_BOOTS")) return BOOTS;
++        else return null;
++    }
++
++    public int getSlot(){
++        return slot;
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/events/DispenserArmorListener.java b/src/main/java/org/ospaindustries/events/DispenserArmorListener.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c3775b27c9b2b221b6a604fb78eaac01a9939d5e
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/events/DispenserArmorListener.java
+@@ -0,0 +1,24 @@
++package org.ospaindustries.events;
++
++import org.bukkit.Bukkit;
++import org.bukkit.entity.Player;
++import org.bukkit.event.EventHandler;
++import org.bukkit.event.Listener;
++import org.bukkit.event.block.BlockDispenseArmorEvent;
++
++public class DispenserArmorListener implements Listener {
++    @EventHandler
++    public void dispenseArmorEvent(BlockDispenseArmorEvent event){
++        ArmorType type = ArmorType.matchType(event.getItem());
++        if(type != null){
++            if(event.getTargetEntity() instanceof Player){
++                Player p = (Player) event.getTargetEntity();
++                ArmorEquipEvent armorEquipEvent = new ArmorEquipEvent(p, ArmorEquipEvent.EquipMethod.DISPENSER, type, null, event.getItem());
++                Bukkit.getServer().getPluginManager().callEvent(armorEquipEvent);
++                if(armorEquipEvent.isCancelled()){
++                    event.setCancelled(true);
++                }
++            }
++        }
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/item/CustomItem.java b/src/main/java/org/ospaindustries/item/CustomItem.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d9228c397569d4d11a22f30da26927e9b4ff20b4
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/item/CustomItem.java
+@@ -0,0 +1,124 @@
++package org.ospaindustries.item;
++
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.format.TextColor;
++import net.md_5.bungee.api.chat.BaseComponent;
++import org.bukkit.ChatColor;
++import org.bukkit.Material;
++import org.bukkit.NamespacedKey;
++import org.bukkit.attribute.Attribute;
++import org.bukkit.attribute.AttributeModifier;
++import org.bukkit.entity.Player;
++import org.bukkit.inventory.ItemFlag;
++import org.bukkit.inventory.ItemStack;
++import org.bukkit.inventory.meta.ItemMeta;
++import org.bukkit.persistence.PersistentDataType;
++import org.jetbrains.annotations.NotNull;
++import org.jetbrains.annotations.Nullable;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++
++public class CustomItem extends ItemStack {
++
++    public static NamespacedKey DICE_CORE_CUSTOM_ITEM_KEY = new NamespacedKey("dice_core", "custom_item_key");
++    private static final HashMap<String, CustomItem> registeredItems = new HashMap<>();
++    private final String itemTag;
++    private final boolean isBlockItem;
++    private final CustomItemBehavior behavior;
++    private int knockbackBonus;
++
++    CustomItem(String name, Material material, String itemTag, int customModelData, ArrayList<String> lore, ArrayList<ItemFlag> flags, HashMap<NamespacedKey, String> stringTags, HashMap<NamespacedKey, Integer> integerTags, HashMap<NamespacedKey, Double> doubleTags, HashMap<NamespacedKey, Boolean> booleanTags, HashMap<NamespacedKey, Byte> byteTags, HashMap<Attribute, AttributeModifier> attributes, CustomItemBehavior behavior, boolean isBlockItem) {
++        this.itemTag = itemTag;
++        this.behavior = behavior;
++        this.isBlockItem = isBlockItem;
++
++        setType(material);
++
++        ItemMeta meta = getItemMeta();
++        meta.setDisplayName(name);
++        meta.setCustomModelData(customModelData);
++        meta.setLore(lore);
++        meta.getPersistentDataContainer().set(CustomItem.DICE_CORE_CUSTOM_ITEM_KEY, PersistentDataType.STRING, itemTag);
++
++        meta.setDisplayName(ChatColor.RESET + meta.getDisplayName());
++
++        for (ItemFlag flag : flags) {
++            meta.addItemFlags(flag);
++        }
++        for (Attribute attribute : attributes.keySet()) {
++            meta.addAttributeModifier(attribute, attributes.get(attribute));
++        }
++        for (NamespacedKey key : stringTags.keySet()) {
++            meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, stringTags.get(key));
++        }
++        for (NamespacedKey key : integerTags.keySet()) {
++            meta.getPersistentDataContainer().set(key, PersistentDataType.INTEGER, integerTags.get(key));
++        }
++        for (NamespacedKey key : doubleTags.keySet()) {
++            meta.getPersistentDataContainer().set(key, PersistentDataType.DOUBLE, doubleTags.get(key));
++        }
++        for (NamespacedKey key : booleanTags.keySet()) {
++            meta.getPersistentDataContainer().set(key, PersistentDataType.BOOLEAN, booleanTags.get(key));
++        }
++        for (NamespacedKey key : byteTags.keySet())
++            meta.getPersistentDataContainer().set(key, PersistentDataType.BYTE, byteTags.get(key));
++
++        setItemMeta(meta);
++        setAmount(1);
++    }
++
++    public String getItemTag() {
++        return itemTag;
++    }
++
++    public CustomItemBehavior getBehavior(){
++         return behavior;
++    }
++    public boolean isBlockItem() {
++        return isBlockItem;
++    }
++    public int getKnockbackBonus(){
++         return knockbackBonus;
++     }
++    @Override
++    public boolean equals(Object obj) {
++        if (this == obj)
++            return true;
++
++        if (!(obj instanceof CustomItem stack))
++            return false;
++
++        return getAmount() == stack.getAmount() && isSimilar(stack);
++    }
++
++    @Override
++    public boolean isSimilar(@Nullable ItemStack obj) {
++        if (this == obj)
++            return true;
++
++        if (!(obj instanceof CustomItem))
++            return false;
++
++        return getItemTag().equals(this.itemTag);
++    }
++
++    public static HashMap<String, CustomItem> getRegisteredItems() {
++        return registeredItems;
++    }
++
++    @Override
++    public @NotNull CustomItem clone() {
++        CustomItem itemStack = (CustomItem) super.clone();
++
++        if (getItemMeta() != null) {
++            itemStack.setItemMeta(getItemMeta());
++        }
++
++        if (getData() != null) {
++            itemStack.setData(getData());
++        }
++
++        return itemStack;
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/item/CustomItemBehavior.java b/src/main/java/org/ospaindustries/item/CustomItemBehavior.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c08f1c76dc3845649f12c58b0548be7a6133ac17
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/item/CustomItemBehavior.java
+@@ -0,0 +1,16 @@
++package org.ospaindustries.item;
++
++import org.bukkit.event.entity.EntityPickupItemEvent;
++import org.bukkit.event.inventory.InventoryClickEvent;
++import org.bukkit.event.player.*;
++import org.bukkit.inventory.Inventory;
++
++public interface CustomItemBehavior {
++
++    default void onInteract(PlayerInteractEvent e){}
++    default void onInteractAtEntity(PlayerInteractAtEntityEvent e){}
++    default void onInventoryClickWithCustomItem(InventoryClickEvent e){}
++    default void onInventoryClickAtCustomItem(InventoryClickEvent e){}
++    default void onDropItem(PlayerDropItemEvent e){}
++    default void onPickup(EntityPickupItemEvent e){}
++}
+diff --git a/src/main/java/org/ospaindustries/item/CustomItemBuilder.java b/src/main/java/org/ospaindustries/item/CustomItemBuilder.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8c0443fc3bae36cab1f731ecd4c292fa47d2748
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/item/CustomItemBuilder.java
+@@ -0,0 +1,177 @@
++package org.ospaindustries.item;
++
++import net.kyori.adventure.text.Component;
++import net.md_5.bungee.api.chat.BaseComponent;
++import net.md_5.bungee.api.chat.TextComponent;
++import org.bukkit.Material;
++import org.bukkit.NamespacedKey;
++import org.bukkit.attribute.Attribute;
++import org.bukkit.attribute.AttributeModifier;
++import org.bukkit.inventory.ItemFlag;
++import org.checkerframework.checker.units.qual.A;
++
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.HashMap;
++import java.util.List;
++
++public class CustomItemBuilder {
++
++    private String displayName;
++    private Component displayComponent;
++    private Material material;
++    private String tag;
++    private int customModelData;
++    private CustomItemBehavior behavior;
++    private final ArrayList<String> lore = new ArrayList<>();
++    private final ArrayList<ItemFlag> flags = new ArrayList<>();
++    private final HashMap<NamespacedKey, String> stringTags = new HashMap<>();
++    private final HashMap<NamespacedKey, Integer> integerTags = new HashMap<>();
++    private final HashMap<NamespacedKey, Double> doubleTags = new HashMap<>();
++    private final HashMap<NamespacedKey, Boolean> booleanTags = new HashMap<>();
++    private final HashMap<Attribute, AttributeModifier> attributes = new HashMap<>();
++    private boolean isBlockItem = false;
++    private int knockbackBonus = 0;
++    private final HashMap<NamespacedKey, Byte> byteTags = new HashMap<>();
++
++    public CustomItemBuilder(String tag, Material material, String displayName) {
++        this.tag = tag;
++        this.material = material;
++        this.displayName = displayName;
++    }
++
++    public CustomItemBuilder(String tag, Material material, Component displayComponent) {
++        this.tag = tag;
++        this.material = material;
++        this.displayComponent = displayComponent;
++    }
++
++    public CustomItemBuilder(String tag, Material material) {
++        this.tag = tag;
++        this.material = material;
++    }
++
++    public void register() {
++        NamespacedKey key = new NamespacedKey("dice_core", tag);
++        CustomItem item = new CustomItem(displayName, material, tag, customModelData, lore, flags, stringTags, integerTags, doubleTags, booleanTags, byteTags, attributes, behavior, isBlockItem);
++
++        if (CustomItem.getRegisteredItems().containsKey(key))
++            throw new RuntimeException("Can't register item with tag \"" + tag + "\", this item is already registered.");
++
++        CustomItem.getRegisteredItems().put(tag, item);
++    }
++
++    public CustomItemBuilder setTag(String tag) {
++        this.tag = tag;
++
++        return this;
++    }
++
++    public CustomItemBuilder setMaterial(Material material) {
++        this.material = material;
++
++        return this;
++    }
++
++    public CustomItemBuilder setDisplayName(String displayName) {
++        this.displayName = displayName;
++
++        return this;
++    }
++
++    public CustomItemBuilder setDisplayComponent(Component displayComponent) {
++        this.displayComponent = displayComponent;
++
++        return this;
++    }
++
++    public CustomItemBuilder setCustomModelData(int customModelData) {
++        this.customModelData = customModelData;
++
++        return this;
++    }
++
++    public CustomItemBuilder setCustomItemBehavior(CustomItemBehavior behavior){
++        this.behavior = behavior;
++
++        return this;
++    }
++
++    public CustomItemBuilder setKnockbackBonus(int knockbackBonus){
++        this.knockbackBonus = knockbackBonus;
++
++        return this;
++    }
++
++    public CustomItemBuilder setBlockItem(boolean blockItem) {
++        isBlockItem = blockItem;
++
++        return this;
++    }
++
++    public CustomItemBuilder addLore(String lorePart) {
++        lore.add(lorePart);
++
++        return this;
++    }
++
++    public CustomItemBuilder addLore(String... lorePart) {
++        lore.addAll(Arrays.stream(lorePart).toList());
++
++        return this;
++    }
++
++    public CustomItemBuilder addLore(List<String> lorePart) {
++        lore.addAll(lorePart);
++
++        return this;
++    }
++
++    public CustomItemBuilder addStringTag(NamespacedKey key, String tag){
++        stringTags.put(key, tag);
++
++        return this;
++    }
++
++    public CustomItemBuilder addIntegerTag(NamespacedKey key, int tag){
++        integerTags.put(key, tag);
++
++        return this;
++    }
++
++    public CustomItemBuilder addDoubleTag(NamespacedKey key, double tag){
++        doubleTags.put(key, tag);
++
++        return this;
++    }
++
++    public CustomItemBuilder addBooleanTag(NamespacedKey key, boolean tag){
++        booleanTags.put(key, tag);
++
++        return this;
++    }
++
++    public CustomItemBuilder addByteTag(NamespacedKey key, byte tag) {
++        byteTags.put(key, tag);
++
++        return this;
++    }
++
++    public CustomItemBuilder addFlag(ItemFlag flag){
++        flags.add(flag);
++
++        return this;
++    }
++
++    public CustomItemBuilder addFlags(ItemFlag... flag){
++        flags.addAll(Arrays.stream(flag).toList());
++
++        return this;
++    }
++
++    public CustomItemBuilder addAttribute(Attribute attribute, AttributeModifier modifier) {
++        attributes.put(attribute, modifier);
++
++        return this;
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/utils/BreakBlockRunnable.java b/src/main/java/org/ospaindustries/utils/BreakBlockRunnable.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..807f2f7e5e8b128b88ee3f763dd3fd953019a18e
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/utils/BreakBlockRunnable.java
+@@ -0,0 +1,92 @@
++package org.ospaindustries.utils;
++
++import org.bukkit.Bukkit;
++import org.bukkit.Location;
++import org.bukkit.entity.Player;
++import org.bukkit.inventory.EquipmentSlot;
++import org.bukkit.inventory.ItemStack;
++import org.bukkit.inventory.meta.Damageable;
++import org.bukkit.scheduler.BukkitRunnable;
++import org.ospaindustries.block.CustomBlock;
++
++import java.util.HashMap;
++
++public class BreakBlockRunnable extends BukkitRunnable {
++
++    public static HashMap<String, BreakBlockRunnable> breakBlockRunnables = new HashMap<>();
++
++    private final CustomBlock block;
++    private final Player player;
++
++    public BreakBlockRunnable(CustomBlock block, Player player) {
++        this.block = block;
++        this.player = player;
++
++        if (block.getBlock() == null) return;
++
++        breakBlockRunnables.put(Location.locationToString(block.getBlock().getLocation().toBlockLocation()), this);
++    }
++
++    private InstrumentMaterial getMaterial(ItemStack itemStack) {
++        String prefix = itemStack.getType().name().split("_")[0];
++        InstrumentMaterial material;
++
++        try {
++            material = InstrumentMaterial.valueOf(prefix);
++        } catch (IllegalArgumentException e) {
++            material = InstrumentMaterial.AIR;
++        }
++
++        return material;
++    }
++
++    private InstrumentType getType(ItemStack itemStack) {
++        InstrumentType type = null;
++
++        for (InstrumentType t : InstrumentType.values())
++            if (itemStack.getType().name().toLowerCase().contains(t.name().toLowerCase())) {
++                type = t;
++
++                break;
++            }
++
++        if (type == null) type = InstrumentType.HAND;
++
++        return type;
++    }
++
++    private int getDamage() {
++        ItemStack playerHand = player.getInventory().getItem(EquipmentSlot.HAND);
++        InstrumentMaterial material = getMaterial(playerHand);
++        InstrumentType type = getType(playerHand);
++
++        if (block.getInstrumentType() != type) return 1;
++
++        return material.getEfficiency();
++    }
++
++    @Override
++    public void run() {
++        block.setDurability(block.getDurability() - getDamage());
++        block.spawnDamageParticle();
++
++        if (block.getDurability() >= 0) return;
++
++        ItemStack stack = player.getInventory().getItem(EquipmentSlot.HAND);
++
++        breakBlockRunnables.remove(block.getBlock().getLocation());
++        this.cancel();
++
++        block.spawnBreakParticle();
++
++        boolean dropLoot = getMaterial(stack).ordinal() < block.getInstrumentMaterial().ordinal() || getType(stack) != block.getInstrumentType();
++
++        block.breakBlock(dropLoot, player);
++
++        if (stack.getItemMeta() instanceof Damageable) {
++            org.bukkit.entity.Damageable damageable = (org.bukkit.entity.Damageable) stack.getItemMeta();
++
++            damageable.damage(1);
++        }
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/utils/CustomLoot.java b/src/main/java/org/ospaindustries/utils/CustomLoot.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..5bed950fb24e22db8b9f8797f973bd31506a127f
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/utils/CustomLoot.java
+@@ -0,0 +1,11 @@
++package org.ospaindustries.utils;
++
++import org.bukkit.inventory.ItemStack;
++
++import java.util.List;
++
++public interface CustomLoot {
++
++    List<ItemStack> getLoot();
++
++}
+diff --git a/src/main/java/org/ospaindustries/utils/DisplayBuilder.java b/src/main/java/org/ospaindustries/utils/DisplayBuilder.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a1c6a63c61c71f45afa5d731aed894aa4ce9d89
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/utils/DisplayBuilder.java
+@@ -0,0 +1,11 @@
++package org.ospaindustries.utils;
++
++import org.bukkit.Location;
++import org.bukkit.NamespacedKey;
++import org.bukkit.entity.Display;
++
++public interface DisplayBuilder {
++    NamespacedKey DISPLAY_TAG_KEY = new NamespacedKey("dice_core", "display_tag_key");
++
++    Display get(Location location);
++}
+diff --git a/src/main/java/org/ospaindustries/utils/InstrumentMaterial.java b/src/main/java/org/ospaindustries/utils/InstrumentMaterial.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..af02aabf41e5252b62d09636f7742862184c8aaf
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/utils/InstrumentMaterial.java
+@@ -0,0 +1,24 @@
++package org.ospaindustries.utils;
++
++
++import org.bukkit.Material;
++
++public enum InstrumentMaterial {
++    AIR(1),
++    WOODEN(2),
++    STONE(4),
++    GOLDEN(12),
++    IRON(6),
++    DIAMOND(8),
++    NETHERITE(10);
++
++    private final int efficiency;
++
++    InstrumentMaterial(int efficiency) {
++        this.efficiency = efficiency;
++    }
++
++    public int getEfficiency() {
++        return efficiency;
++    }
++}
+diff --git a/src/main/java/org/ospaindustries/utils/InstrumentType.java b/src/main/java/org/ospaindustries/utils/InstrumentType.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a92f812e66a26b499fc212c7d5039ea272d6fbf
+--- /dev/null
++++ b/src/main/java/org/ospaindustries/utils/InstrumentType.java
+@@ -0,0 +1,11 @@
++package org.ospaindustries.utils;
++
++public enum InstrumentType {
++    HAND,
++    PICKAXE,
++    AXE,
++    SWORD,
++    HOE,
++    SHOVEL,
++    SHEARS
++}
