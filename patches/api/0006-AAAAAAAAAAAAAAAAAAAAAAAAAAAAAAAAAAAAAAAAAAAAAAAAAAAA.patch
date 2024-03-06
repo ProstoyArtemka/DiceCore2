@@ -1,0 +1,180 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ProstoyArtemka <ProstoyArtemka@yandex.ru>
+Date: Wed, 6 Mar 2024 21:13:12 +0700
+Subject: [PATCH] 
+ AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+
+diff --git a/src/main/java/org/bukkit/entity/Player.java b/src/main/java/org/bukkit/entity/Player.java
+index ae61a39b25267b84fe0b8766e4b12d9b24b44ded..dd3338c6e4dde5e4f606cc2fa3e67ec1718275a6 100644
+--- a/src/main/java/org/bukkit/entity/Player.java
++++ b/src/main/java/org/bukkit/entity/Player.java
+@@ -36,6 +36,7 @@ import org.bukkit.block.sign.Side;
+ import org.bukkit.conversations.Conversable;
+ import org.bukkit.event.block.BlockBreakEvent;
+ import org.bukkit.event.block.BlockDropItemEvent;
++import org.bukkit.event.entity.EntityDamageEvent;
+ import org.bukkit.event.player.PlayerExpCooldownChangeEvent;
+ import org.bukkit.event.player.PlayerResourcePackStatusEvent;
+ import org.bukkit.inventory.EquipmentSlot;
+@@ -43,7 +44,6 @@ import org.bukkit.inventory.ItemStack;
+ import org.bukkit.map.MapView;
+ import org.bukkit.plugin.Plugin;
+ import org.bukkit.plugin.messaging.PluginMessageRecipient;
+-import org.bukkit.profile.PlayerProfile;
+ import org.bukkit.scoreboard.Scoreboard;
+ import org.jetbrains.annotations.ApiStatus;
+ import org.jetbrains.annotations.NotNull;
+@@ -122,6 +122,8 @@ public interface Player extends HumanEntity, Conversable, OfflinePlayer, PluginM
+     @Deprecated // Paper
+     public void setDisplayName(@Nullable String name);
+ 
++    public void disableShield(boolean sprinting);
++
+     // Paper start
+     /**
+      * Sets the name that is shown on the in-game player list.
+@@ -3574,4 +3576,7 @@ public interface Player extends HumanEntity, Conversable, OfflinePlayer, PluginM
+     @Override
+     Spigot spigot();
+     // Spigot end
++
++    float getDamageAfterArmorAbsorb(LivingEntity attacker, float amount);
++    float getDamageAfterMagicAbsorb(LivingEntity attacker, float amount);
+ }
+diff --git a/src/main/java/org/ospaindustries/block/CustomBlock.java b/src/main/java/org/ospaindustries/block/CustomBlock.java
+index afeadb53d788accc28a1653e5f029da655383935..dae7c8302182295c8ee6373357dfd47314230161 100644
+--- a/src/main/java/org/ospaindustries/block/CustomBlock.java
++++ b/src/main/java/org/ospaindustries/block/CustomBlock.java
+@@ -10,6 +10,7 @@ import org.bukkit.entity.ItemDisplay;
+ import org.bukkit.entity.Player;
+ import org.bukkit.event.block.BlockBreakEvent;
+ import org.bukkit.inventory.ItemStack;
++import org.bukkit.inventory.RecipeChoice;
+ import org.bukkit.inventory.meta.ItemMeta;
+ import org.bukkit.persistence.PersistentDataContainer;
+ import org.bukkit.persistence.PersistentDataType;
+@@ -45,8 +46,9 @@ public class CustomBlock {
+     private Block block;
+     private ItemDisplay mainDisplay;
+     private List<DisplayBuilder> displayBuilders;
++    private final boolean drop;
+ 
+-    CustomBlock(String tag, int customModelData, CustomLoot loot, CustomBlockBehavior behavior, InstrumentType type, InstrumentMaterial material, int durability, CustomItem item, List<DisplayBuilder> displayBuilders) {
++    CustomBlock(String tag, int customModelData, CustomLoot loot, CustomBlockBehavior behavior, InstrumentType type, InstrumentMaterial material, int durability, CustomItem item, List<DisplayBuilder> displayBuilders, boolean drop) {
+         this.tag = tag;
+         this.customModelData = customModelData;
+         this.loot = loot;
+@@ -56,6 +58,7 @@ public class CustomBlock {
+         this.instrumentMaterial = material;
+         this.item = item;
+         this.displayBuilders = displayBuilders;
++        this.drop = drop;
+     }
+ 
+     @Nullable
+@@ -79,7 +82,7 @@ public class CustomBlock {
+ 
+     private ItemStack getDisplayItemStack() {
+         CustomBlock item = this;
+-        ItemStack result = new ItemStack(Material.PRISMARINE_CRYSTALS);
++        ItemStack result = new ItemStack(Material.PRISMARINE_SHARD);
+         ItemMeta meta = result.getItemMeta();
+ 
+         meta.setCustomModelData(item.customModelData);
+@@ -187,6 +190,9 @@ public class CustomBlock {
+             for (ItemStack stack : loot.getLoot())
+                 block.getWorld().dropItemNaturally(block.getLocation().toCenterLocation(), stack);
+ 
++        if (drop)
++            block.getWorld().dropItemNaturally(block.getLocation().toCenterLocation(), CustomItem.getRegisteredItems().get(this.getTag() + "_blockitem"));
++
+         for (Display display : getSubDisplays())
+             display.remove();
+ 
+@@ -227,6 +233,6 @@ public class CustomBlock {
+ 
+     @Override
+     public CustomBlock clone() {
+-        return new CustomBlock(tag, customModelData, loot, behavior, instrumentType, instrumentMaterial, maxDurability, item, displayBuilders);
++        return new CustomBlock(tag, customModelData, loot, behavior, instrumentType, instrumentMaterial, maxDurability, item, displayBuilders, drop);
+     }
+ }
+diff --git a/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java b/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
+index a190e3864c91677fdd07034942c6d622472d932e..3e685b91a0982f3e96a01fef5f9ab30a69ee8576 100644
+--- a/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
++++ b/src/main/java/org/ospaindustries/block/CustomBlockBuilder.java
+@@ -29,6 +29,7 @@ public class CustomBlockBuilder {
+     private String itemDisplayName = "";
+     private Material itemMaterial = Material.BARRIER;
+     private final ArrayList<DisplayBuilder> displayBuilders = new ArrayList<>();
++    private boolean dropHimself;
+ 
+     public CustomBlockBuilder(String tag) {
+         this.tag = tag;
+@@ -65,6 +66,12 @@ public class CustomBlockBuilder {
+         return this;
+     }
+ 
++    public CustomBlockBuilder setDropHimself(boolean drop) {
++        this.dropHimself = drop;
++
++        return this;
++    }
++
+     public CustomBlockBuilder setItemDisplayName(String itemDisplayName) {
+         this.itemDisplayName = itemDisplayName;
+ 
+@@ -120,7 +127,7 @@ public class CustomBlockBuilder {
+         if (CustomBlock.getRegisteredBlocks().containsKey(tag))
+             throw new RuntimeException("Can't register block with tag \"" + tag + "\", this block is already registered.");
+ 
+-        CustomBlock block = new CustomBlock(tag, customModelData, customLoot, behavior, type, material, maxDurability, customItem, displayBuilders);
++        CustomBlock block = new CustomBlock(tag, customModelData, customLoot, behavior, type, material, maxDurability, customItem, displayBuilders, dropHimself);
+         CustomBlock.getRegisteredBlocks().put(tag, block);
+     }
+ }
+diff --git a/src/main/java/org/ospaindustries/item/CustomItem.java b/src/main/java/org/ospaindustries/item/CustomItem.java
+index 19aed90401b91a27a7f343a07cd6d22e2f18923b..b9892a7cfb64a6de73249c1161e5272d7191368b 100644
+--- a/src/main/java/org/ospaindustries/item/CustomItem.java
++++ b/src/main/java/org/ospaindustries/item/CustomItem.java
+@@ -27,7 +27,7 @@ public class CustomItem extends ItemStack {
+     private final boolean isBlockItem;
+     private final CustomItemBehavior behavior;
+ 
+-    CustomItem(String name, Material material, String itemTag, int customModelData, ArrayList<String> lore, ArrayList<ItemFlag> flags, HashMap<NamespacedKey, String> stringTags, HashMap<NamespacedKey, Integer> integerTags, HashMap<NamespacedKey, Double> doubleTags, HashMap<NamespacedKey, Boolean> booleanTags, HashMap<Attribute, AttributeModifier> attributes, CustomItemBehavior behavior, boolean isBlockItem) {
++    CustomItem(String name, Material material, String itemTag, int customModelData, ArrayList<String> lore, ArrayList<ItemFlag> flags, HashMap<NamespacedKey, String> stringTags, HashMap<NamespacedKey, Integer> integerTags, HashMap<NamespacedKey, Double> doubleTags, HashMap<NamespacedKey, Boolean> booleanTags, HashMap<NamespacedKey, Byte> byteTags, HashMap<Attribute, AttributeModifier> attributes, CustomItemBehavior behavior, boolean isBlockItem) {
+         this.itemTag = itemTag;
+         this.behavior = behavior;
+         this.isBlockItem = isBlockItem;
+@@ -61,6 +61,9 @@ public class CustomItem extends ItemStack {
+         for (NamespacedKey key: booleanTags.keySet())
+             meta.getPersistentDataContainer().set(key, PersistentDataType.BOOLEAN, booleanTags.get(key));
+ 
++        for (NamespacedKey key: byteTags.keySet())
++            meta.getPersistentDataContainer().set(key, PersistentDataType.BYTE, byteTags.get(key));
++
+         setItemMeta(meta);
+         setAmount(1);
+     }
+diff --git a/src/main/java/org/ospaindustries/item/CustomItemBuilder.java b/src/main/java/org/ospaindustries/item/CustomItemBuilder.java
+index 854cbe13589d500b10abffe6392e6e291433129e..6117b7d920ac007ca32239f07e839a2fea28602e 100644
+--- a/src/main/java/org/ospaindustries/item/CustomItemBuilder.java
++++ b/src/main/java/org/ospaindustries/item/CustomItemBuilder.java
+@@ -29,6 +29,7 @@ public class CustomItemBuilder {
+     private final HashMap<NamespacedKey, Integer> integerTags = new HashMap<>();
+     private final HashMap<NamespacedKey, Double> doubleTags = new HashMap<>();
+     private final HashMap<NamespacedKey, Boolean> booleanTags = new HashMap<>();
++    private final HashMap<NamespacedKey, Byte> byteTags = new HashMap<>();
+     private final HashMap<Attribute, AttributeModifier> attributes = new HashMap<>();
+     private boolean isBlockItem = false;
+     private int knockbackBonus = 0;
+@@ -54,7 +55,7 @@ public class CustomItemBuilder {
+     public void register() {
+         NamespacedKey key = new NamespacedKey("dice_core", tag);
+ 
+-        CustomItem item = new CustomItem(displayName, material, tag, customModelData, lore, flags, stringTags, integerTags, doubleTags, booleanTags, attributes, behavior, isBlockItem);
++        CustomItem item = new CustomItem(displayName, material, tag, customModelData, lore, flags, stringTags, integerTags, doubleTags, booleanTags, byteTags, attributes, behavior, isBlockItem);
+ 
+         if (CustomItem.getRegisteredItems().containsKey(key))
+             throw new RuntimeException("Can't register item with tag \"" + tag + "\", this item is already registered.");
