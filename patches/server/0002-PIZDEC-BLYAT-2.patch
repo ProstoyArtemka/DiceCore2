@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ProstoyArtemka <ProstoyArtemka@yandex.ru>
+Date: Thu, 7 Mar 2024 00:30:41 +0700
+Subject: [PATCH] PIZDEC BLYAT 2
+
+
+diff --git a/src/main/java/com/destroystokyo/paper/entity/ai/VanillaGoal.java b/src/main/java/com/destroystokyo/paper/entity/ai/VanillaGoal.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d23c1ecfd0c519f538d76fa84091e43696ce495e
+--- /dev/null
++++ b/src/main/java/com/destroystokyo/paper/entity/ai/VanillaGoal.java
+@@ -0,0 +1,21 @@
++package com.destroystokyo.paper.entity.ai;
++
++import org.bukkit.entity.Mob;
++
++import java.util.EnumSet;
++
++public interface VanillaGoal<T> {
++    boolean shouldActivate();
++
++    boolean shouldStayActive();
++
++    void start();
++
++    void stop();
++
++    void tick();
++
++    GoalKey<? extends Mob> getKey();
++
++    EnumSet<GoalType> getTypes();
++}
